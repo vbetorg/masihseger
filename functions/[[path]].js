@@ -2,9 +2,9 @@ export async function onRequest(context) {
   try {
     const url = new URL(context.request.url);
     const path = url.pathname;
+    const origin = url.origin;
 
     const API_URL = "https://script.google.com/macros/s/AKfycbxXpn0lB80LpLRaJHKBI5wgLjnyGLU-gXC3qTo-MxXBuJlHbTZ10ORuFdnDRl1LB2y5/exec";
-    const DOMAIN = url.origin;
 
     const match = path.match(/^\/artikel\/(.+)$/);
     const slug = match ? match[1] : null;
@@ -13,10 +13,14 @@ export async function onRequest(context) {
     const perPage = 12;
 
     // ======================
-    // TEMPLATE LOADER (INI KUNCI NYA)
+    // TEMPLATE LOADER (FIX)
     // ======================
     async function renderTemplate(file, data = {}) {
-      const res = await fetch(new URL(`../templates/${file}`, import.meta.url));
+      const res = await fetch(`${origin}/templates/${file}`);
+      if (!res.ok) {
+        return `Template ${file} tidak ditemukan`;
+      }
+
       let html = await res.text();
 
       for (const key in data) {
@@ -50,12 +54,12 @@ export async function onRequest(context) {
           .toLowerCase()
           .replace(/\s+/g, "-");
 
-        return `<url><loc>${DOMAIN}/artikel/${s}</loc></url>`;
+        return `<url><loc>${origin}/artikel/${s}</loc></url>`;
       }).join("");
 
       return new Response(`<?xml version="1.0" encoding="UTF-8"?>
       <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-        <url><loc>${DOMAIN}/</loc></url>
+        <url><loc>${origin}/</loc></url>
         ${items}
       </urlset>`, {
         headers: { "content-type": "application/xml" },
@@ -71,7 +75,7 @@ export async function onRequest(context) {
 
       let cards = "";
 
-      paginated.forEach(item => {
+      for (const item of paginated) {
         let s = (item.slug || item.id || "")
           .toString()
           .toLowerCase()
@@ -85,12 +89,12 @@ export async function onRequest(context) {
 
         cards += `
           <a href="/artikel/${s}" class="card">
-            <img src="${image}">
+            <img src="${image}" alt="${title}">
             <h2>${title}</h2>
             <p>${desc}</p>
           </a>
         `;
-      });
+      }
 
       const totalPages = Math.ceil(data.length / perPage);
 
@@ -132,7 +136,7 @@ export async function onRequest(context) {
       ? artikel.image
       : "/default.png";
 
-    const fullUrl = `${DOMAIN}/artikel/${slug}`;
+    const fullUrl = `${origin}/artikel/${slug}`;
 
     const html = await renderTemplate("artikel.html", {
       title,
