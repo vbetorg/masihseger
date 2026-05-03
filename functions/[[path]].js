@@ -4,7 +4,7 @@ export async function onRequest(context) {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    const API_URL = "https://script.googleusercontent.com/macros/echo?user_content_key=AUkAhnQG_uFvBtRNtB-H1eXtWUUakunwRtVhCQQ1ZYiVVB8hm6aZu_Nx2ETacpMBUWiRhT01ZgH-_QlR1bhyuEZT46lC2-jFM61zrZVMFR-YTR8ZIq8vO7z7X0WjI_6orwbeo98LSxAz8LPuwV55nBI464GVCnNZkk3Lh9_HP8XP9guAZKogFwvu0Y6rzctkTw_7uaXC8B6K7DdZtwUEUxA_Za0Q4V4-2AYORbfOht_0Ag5cK4eawb-M2xGtmPV2SiClDrdrv1LU25QXIAw75Ub2SPdQNxFD7A&lib=ML-upNh7cHWXjFhyiwlLPL9CR0-6s62-w";
+    const API_URL = "https://script.google.com/macros/s/AKfycbxXpn0lB80LpLRaJHKBI5wgLjnyGLU-gXC3qTo-MxXBuJlHbTZ10ORuFdnDRl1LB2y5/exec";
 
     const DOMAIN = url.origin;
     const page = parseInt(url.searchParams.get("page") || "1");
