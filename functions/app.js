@@ -22,6 +22,13 @@ export async function onRequest(context) {
         .replace(/\s+/g, "-")
         .replace(/-+/g, "-");
 
+    const escapeHtml = (str) =>
+      (str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+
     const render = (tpl, data) => {
       let html = tpl;
       for (const key in data) {
@@ -31,18 +38,39 @@ export async function onRequest(context) {
     };
 
     // ======================
-    // LOAD TEMPLATE
+    // LOAD TEMPLATE (FIX)
     // ======================
     const loadTemplate = async (name) => {
-      const res = await fetch(`${DOMAIN}/templates/${name}.html`);
+      const res = await context.env.ASSETS.fetch(
+        new Request(`https://internal/templates/${name}.html`)
+      );
+
+      if (!res.ok) {
+        throw new Error("Template tidak ditemukan: " + name);
+      }
+
       return await res.text();
     };
 
     // ======================
-    // FETCH DATA
+    // FETCH API (WITH TIMEOUT)
     // ======================
-    const res = await fetch(API_URL);
-    const data = await res.json();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    let data = [];
+
+    try {
+      const res = await fetch(API_URL, { signal: controller.signal });
+      clearTimeout(timeout);
+
+      const text = await res.text();
+      const json = JSON.parse(text);
+
+      if (Array.isArray(json)) data = json;
+    } catch {
+      return new Response("Gagal ambil data API", { status: 500 });
+    }
 
     // ======================
     // HOMEPAGE
@@ -58,9 +86,15 @@ export async function onRequest(context) {
       paginated.forEach(item => {
         const s = makeSlug(item.slug || item.id);
 
+        const title = escapeHtml(item.title || "Artikel");
+        const desc = escapeHtml((item.meta_description || "").substring(0, 120));
+        const image = item.image || "/default.png";
+
         cards += `
           <a href="/artikel/${s}">
-            <h2>${item.title}</h2>
+            <img src="${image}" alt="${title}">
+            <h2>${title}</h2>
+            <p>${desc}</p>
           </a>
         `;
       });
@@ -68,19 +102,31 @@ export async function onRequest(context) {
       const totalPages = Math.ceil(data.length / perPage);
 
       let pagination = "";
+
+      if (page > 1) {
+        pagination += `<a href="/?page=${page - 1}">Prev</a>`;
+      }
+
       for (let i = 1; i <= totalPages; i++) {
         pagination += `<a href="/?page=${i}">${i}</a>`;
       }
 
+      if (page < totalPages) {
+        pagination += `<a href="/?page=${page + 1}">Next</a>`;
+      }
+
       const html = render(tpl, {
         title: "Blog Artikel",
-        desc: "Kumpulan artikel",
+        desc: `Kumpulan artikel halaman ${page}`,
         cards,
         pagination
       });
 
       return new Response(html, {
-        headers: { "content-type": "text/html" },
+        headers: {
+          "content-type": "text/html;charset=UTF-8",
+          "cache-control": "public, max-age=300"
+        },
       });
     }
 
@@ -97,15 +143,23 @@ export async function onRequest(context) {
 
     const tpl = await loadTemplate("artikel");
 
+    const title = escapeHtml(artikel.title || "Artikel");
+    const desc = escapeHtml(
+      artikel.meta_description || (artikel.content || "").substring(0, 140)
+    );
+
     const html = render(tpl, {
-      title: artikel.title,
-      desc: artikel.meta_description || "",
+      title,
+      desc,
       content: artikel.content || "",
       image: artikel.image || "/default.png"
     });
 
     return new Response(html, {
-      headers: { "content-type": "text/html" },
+      headers: {
+        "content-type": "text/html;charset=UTF-8",
+        "cache-control": "public, max-age=300"
+      },
     });
 
   } catch (err) {
