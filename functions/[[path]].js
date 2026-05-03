@@ -10,10 +10,21 @@ export async function onRequest(context) {
     const page = parseInt(url.searchParams.get("page") || "1");
     const perPage = 12;
 
+    const cache = caches.default;
+
     // ======================
-    // FETCH DATA
+    // FETCH API (CACHE)
     // ======================
-    const res = await fetch(API_URL);
+    const cacheKey = new Request(API_URL);
+    let res = await cache.match(cacheKey);
+
+    if (!res) {
+      res = await fetch(API_URL, {
+        cf: { cacheTtl: 600, cacheEverything: true }
+      });
+      await cache.put(cacheKey, res.clone());
+    }
+
     const text = await res.text();
 
     let data;
@@ -25,7 +36,7 @@ export async function onRequest(context) {
     }
 
     // ======================
-    // HELPER SLUG
+    // SLUG HELPER
     // ======================
     const make = (val) =>
       (val || "")
@@ -75,12 +86,26 @@ export async function onRequest(context) {
     const slug = match ? decodeURIComponent(match[1]) : null;
 
     // ======================
+    // LOAD TEMPLATE (CACHE)
+    // ======================
+    async function loadTemplate(file) {
+      const req = new Request(url.origin + file);
+      let res = await cache.match(req);
+
+      if (!res) {
+        res = await fetch(req);
+        await cache.put(req, res.clone());
+      }
+
+      return await res.text();
+    }
+
+    // ======================
     // HOMEPAGE
     // ======================
     if (!slug) {
 
-      const template = await fetch(new URL("/templates/home.html", request.url))
-        .then(r => r.text());
+      const template = await loadTemplate("/templates/home.html");
 
       const start = (page - 1) * perPage;
       const paginated = data.slice(start, start + perPage);
@@ -89,7 +114,6 @@ export async function onRequest(context) {
 
       paginated.forEach(item => {
         const s = makeSlug(item);
-
         const title = item.title || "Artikel";
         const desc = (item.meta_description || "").substring(0, 100);
 
@@ -110,11 +134,7 @@ export async function onRequest(context) {
 
       let pagination = "";
       for (let i = 1; i <= totalPages; i++) {
-        pagination += `
-          <a href="/?page=${i}" class="${i === page ? "active" : ""}">
-            ${i}
-          </a>
-        `;
+        pagination += `<a href="/?page=${i}" class="${i === page ? "active" : ""}">${i}</a>`;
       }
 
       const jsonLd = {
@@ -141,10 +161,9 @@ export async function onRequest(context) {
     }
 
     // ======================
-    // ARTIKEL (ANTI ERROR SLUG)
+    // ARTIKEL (ANTI ERROR)
     // ======================
     const artikel = data.find(item => {
-
       const target = make(slug);
 
       const candidates = [
@@ -157,13 +176,10 @@ export async function onRequest(context) {
     });
 
     if (!artikel) {
-      return new Response("Slug tidak ditemukan: " + slug, {
-        status: 404
-      });
+      return new Response("Slug tidak ditemukan: " + slug, { status: 404 });
     }
 
-    const template = await fetch(new URL("/templates/artikel.html", request.url))
-      .then(r => r.text());
+    const template = await loadTemplate("/templates/artikel.html");
 
     const title = artikel.title || "Artikel";
     const content = artikel.content || "";
