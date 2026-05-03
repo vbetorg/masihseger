@@ -4,37 +4,27 @@ export async function onRequest(context) {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    const API_URL = "https://script.google.com/macros/s/AKfycbxXpn0lB80LpLRaJHKBI5wgLjnyGLU-gXC3qTo-MxXBuJlHbTZ10ORuFdnDRl1LB2y5/exec";
-    const DOMAIN = url.origin;
+    const API_URL = "https://script.googleusercontent.com/macros/echo?user_content_key=AUkAhnQG_uFvBtRNtB-H1eXtWUUakunwRtVhCQQ1ZYiVVB8hm6aZu_Nx2ETacpMBUWiRhT01ZgH-_QlR1bhyuEZT46lC2-jFM61zrZVMFR-YTR8ZIq8vO7z7X0WjI_6orwbeo98LSxAz8LPuwV55nBI464GVCnNZkk3Lh9_HP8XP9guAZKogFwvu0Y6rzctkTw_7uaXC8B6K7DdZtwUEUxA_Za0Q4V4-2AYORbfOht_0Ag5cK4eawb-M2xGtmPV2SiClDrdrv1LU25QXIAw75Ub2SPdQNxFD7A&lib=ML-upNh7cHWXjFhyiwlLPL9CR0-6s62-w";
 
+    const DOMAIN = url.origin;
     const page = parseInt(url.searchParams.get("page") || "1");
     const perPage = 12;
 
     const cache = caches.default;
 
     // ======================
-    // FETCH API (ANTI REDIRECT + ANTI CACHE ERROR)
+    // FETCH API (CACHE)
     // ======================
-    const cacheKey = new Request(API_URL + "?v=2"); // versi biar cache fresh
+    const cacheKey = new Request(API_URL);
     let res = await cache.match(cacheKey);
 
     if (!res) {
       res = await fetch(API_URL, {
-        redirect: "follow",
-        headers: {
-          "Accept": "application/json"
+        cf: {
+          cacheTtl: 600,
+          cacheEverything: true
         }
       });
-
-      const textCheck = await res.text();
-
-      // ❌ kalau bukan JSON (redirect HTML)
-      if (textCheck.includes("<HTML>")) {
-        return new Response("API ERROR (Redirect / bukan JSON)");
-      }
-
-      // simpan ke cache
-      res = new Response(textCheck, res);
       await cache.put(cacheKey, res.clone());
     }
 
@@ -70,20 +60,18 @@ export async function onRequest(context) {
       const items = data.map(item => {
         const s = makeSlug(item);
         return `
-          <url>
-            <loc>${DOMAIN}/artikel/${s}</loc>
-            <lastmod>${today}</lastmod>
-            <changefreq>daily</changefreq>
-            <priority>0.8</priority>
-          </url>
-        `;
+        <url>
+          <loc>${DOMAIN}/artikel/${s}</loc>
+          <lastmod>${today}</lastmod>
+          <changefreq>daily</changefreq>
+          <priority>0.8</priority>
+        </url>`;
       }).join("");
 
       return new Response(`<?xml version="1.0" encoding="UTF-8"?>
       <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
         <url>
           <loc>${DOMAIN}/</loc>
-          <lastmod>${today}</lastmod>
           <priority>1.0</priority>
         </url>
         ${items}
@@ -99,26 +87,9 @@ export async function onRequest(context) {
     const slug = match ? decodeURIComponent(match[1]) : null;
 
     // ======================
-    // LOAD TEMPLATE (CACHE)
-    // ======================
-    async function loadTemplate(file) {
-      const req = new Request(url.origin + file);
-      let res = await cache.match(req);
-
-      if (!res) {
-        res = await fetch(req);
-        await cache.put(req, res.clone());
-      }
-
-      return await res.text();
-    }
-
-    // ======================
     // HOMEPAGE
     // ======================
     if (!slug) {
-
-      const template = await loadTemplate("/templates/home.html");
 
       const start = (page - 1) * perPage;
       const paginated = data.slice(start, start + perPage);
@@ -127,7 +98,6 @@ export async function onRequest(context) {
 
       paginated.forEach(item => {
         const s = makeSlug(item);
-
         const title = item.title || "Artikel";
         const desc = (item.meta_description || "").substring(0, 100);
 
@@ -136,12 +106,11 @@ export async function onRequest(context) {
           : "/default.png";
 
         cards += `
-          <a href="/artikel/${s}" class="card">
-            <img src="${image}" alt="${title}">
-            <h2>${title}</h2>
-            <p>${desc}</p>
-          </a>
-        `;
+        <a href="/artikel/${s}" class="card">
+          <img src="${image}" alt="${title}">
+          <h2>${title}</h2>
+          <p>${desc}</p>
+        </a>`;
       });
 
       const totalPages = Math.ceil(data.length / perPage);
@@ -151,25 +120,38 @@ export async function onRequest(context) {
         pagination += `<a href="/?page=${i}" class="${i === page ? "active" : ""}">${i}</a>`;
       }
 
-      const jsonLd = {
-        "@context": "https://schema.org",
-        "@type": "WebSite",
-        "name": "Website Kamu",
-        "url": DOMAIN
-      };
+      return new Response(`
+      <html>
+      <head>
+        <title>Blog Artikel</title>
+        <meta name="description" content="Kumpulan artikel terbaru">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-      let html = template
-        .replace(/{{title}}/g, "Blog Artikel")
-        .replace(/{{desc}}/g, "Kumpulan artikel terbaru")
-        .replace(/{{url}}/g, `${DOMAIN}/?page=${page}`)
-        .replace(/{{site_name}}/g, "Website Kamu")
-        .replace(/{{author}}/g, "Admin")
-        .replace(/{{image}}/g, "/default.png")
-        .replace("{{json}}", JSON.stringify(jsonLd))
-        .replace("{{cards}}", cards)
-        .replace("{{pagination}}", pagination);
+        <style>
+          body{margin:0;font-family:sans-serif;background:#f5f5f5;}
+          header{background:#111;color:#fff;padding:20px;text-align:center;}
+          .container{max-width:1100px;margin:auto;padding:20px;}
+          .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:20px;}
+          .card{background:#fff;padding:15px;border-radius:10px;text-decoration:none;color:#000;}
+          .card img{width:100%;border-radius:8px;}
+          .pagination{text-align:center;margin-top:20px;}
+          .pagination a{margin:5px;padding:8px 12px;background:#ddd;text-decoration:none;}
+          .pagination .active{background:#111;color:#fff;}
+        </style>
+      </head>
 
-      return new Response(html, {
+      <body>
+        <header>
+          <h1>Blog Artikel</h1>
+        </header>
+
+        <div class="container">
+          <div class="grid">${cards}</div>
+          <div class="pagination">${pagination}</div>
+        </div>
+      </body>
+      </html>
+      `, {
         headers: { "content-type": "text/html;charset=UTF-8" },
       });
     }
@@ -179,19 +161,12 @@ export async function onRequest(context) {
     // ======================
     const artikel = data.find(item => {
       const target = make(slug);
-      const candidates = [
-        make(item.slug),
-        make(item.id),
-        make(item.title),
-      ];
-      return candidates.includes(target);
+      return [make(item.slug), make(item.id), make(item.title)].includes(target);
     });
 
     if (!artikel) {
-      return new Response("Slug tidak ditemukan: " + slug, { status: 404 });
+      return new Response("Not found", { status: 404 });
     }
-
-    const template = await loadTemplate("/templates/artikel.html");
 
     const title = artikel.title || "Artikel";
     const content = artikel.content || "";
@@ -203,51 +178,61 @@ export async function onRequest(context) {
 
     const fullUrl = `${DOMAIN}/artikel/${slug}`;
 
-    // ======================
-    // RELATED
-    // ======================
+    // related
     let related = "<h3>Artikel Terkait</h3><ul>";
-
-    data.slice(0, 5).forEach(item => {
+    data.slice(0,5).forEach(item => {
       const s = makeSlug(item);
       related += `<li><a href="/artikel/${s}">${item.title}</a></li>`;
     });
-
     related += "</ul>";
 
-    // ======================
     // JSON-LD
-    // ======================
     const jsonLd = {
       "@context": "https://schema.org",
       "@type": "Article",
       "headline": title,
       "description": desc,
       "image": image,
-      "mainEntityOfPage": fullUrl,
-      "author": {
-        "@type": "Person",
-        "name": "Admin"
-      },
-      "publisher": {
-        "@type": "Organization",
-        "name": "Website Kamu"
-      },
-      "datePublished": new Date().toISOString()
+      "mainEntityOfPage": fullUrl
     };
 
-    let html = template
-      .replace(/{{title}}/g, title)
-      .replace(/{{desc}}/g, desc)
-      .replace(/{{image}}/g, image)
-      .replace(/{{url}}/g, fullUrl)
-      .replace(/{{site_name}}/g, "Website Kamu")
-      .replace(/{{author}}/g, "Admin")
-      .replace("{{json}}", JSON.stringify(jsonLd))
-      .replace("{{content}}", content)
-      .replace("{{related}}", related);
+    return new Response(`
+    <html>
+    <head>
+      <title>${title}</title>
 
-    return new Response(html, {
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta name="description" content="${desc}">
+      <link rel="canonical" href="${fullUrl}">
+
+      <!-- OG -->
+      <meta property="og:title" content="${title}">
+      <meta property="og:description" content="${desc}">
+      <meta property="og:image" content="${image}">
+
+      <!-- JSON -->
+      <script type="application/ld+json">
+        ${JSON.stringify(jsonLd)}
+      </script>
+
+      <style>
+        body{font-family:sans-serif;max-width:800px;margin:auto;padding:20px;}
+      </style>
+    </head>
+
+    <body>
+      <h1>${title}</h1>
+      <p><i>${desc}</i></p>
+
+      ${content}
+
+      ${related}
+
+      <br><a href="/">← Kembali</a>
+    </body>
+    </html>
+    `, {
       headers: { "content-type": "text/html;charset=UTF-8" },
     });
 
