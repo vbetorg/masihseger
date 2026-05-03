@@ -27,19 +27,20 @@ export async function onRequest(context) {
     // ======================
     // HELPER SLUG
     // ======================
-    const makeSlug = (item) => {
-      return (item.slug || item.id || "")
+    const make = (val) =>
+      (val || "")
         .toString()
         .toLowerCase()
+        .trim()
         .replace(/\s+/g, "-")
         .replace(/[^\w\-]+/g, "");
-    };
+
+    const makeSlug = (item) => make(item.slug || item.id || item.title);
 
     // ======================
     // SITEMAP
     // ======================
     if (path === "/sitemap.xml") {
-
       const today = new Date().toISOString();
 
       const items = data.map(item => {
@@ -71,7 +72,7 @@ export async function onRequest(context) {
     // ROUTING
     // ======================
     const match = path.match(/^\/artikel\/(.+)$/);
-    const slug = match ? match[1] : null;
+    const slug = match ? decodeURIComponent(match[1]) : null;
 
     // ======================
     // HOMEPAGE
@@ -140,12 +141,25 @@ export async function onRequest(context) {
     }
 
     // ======================
-    // ARTIKEL
+    // ARTIKEL (ANTI ERROR SLUG)
     // ======================
-    const artikel = data.find(item => makeSlug(item) === slug);
+    const artikel = data.find(item => {
+
+      const target = make(slug);
+
+      const candidates = [
+        make(item.slug),
+        make(item.id),
+        make(item.title),
+      ];
+
+      return candidates.includes(target);
+    });
 
     if (!artikel) {
-      return new Response("Not found", { status: 404 });
+      return new Response("Slug tidak ditemukan: " + slug, {
+        status: 404
+      });
     }
 
     const template = await fetch(new URL("/templates/artikel.html", request.url))
@@ -162,7 +176,7 @@ export async function onRequest(context) {
     const fullUrl = `${DOMAIN}/artikel/${slug}`;
 
     // ======================
-    // RELATED POST
+    // RELATED
     // ======================
     let related = "<h3>Artikel Terkait</h3><ul>";
 
