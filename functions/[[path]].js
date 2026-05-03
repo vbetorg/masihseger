@@ -13,15 +13,28 @@ export async function onRequest(context) {
     const cache = caches.default;
 
     // ======================
-    // FETCH API (CACHE)
+    // FETCH API (ANTI REDIRECT + ANTI CACHE ERROR)
     // ======================
-    const cacheKey = new Request(API_URL);
+    const cacheKey = new Request(API_URL + "?v=2"); // versi biar cache fresh
     let res = await cache.match(cacheKey);
 
     if (!res) {
       res = await fetch(API_URL, {
-        cf: { cacheTtl: 600, cacheEverything: true }
+        redirect: "follow",
+        headers: {
+          "Accept": "application/json"
+        }
       });
+
+      const textCheck = await res.text();
+
+      // ❌ kalau bukan JSON (redirect HTML)
+      if (textCheck.includes("<HTML>")) {
+        return new Response("API ERROR (Redirect / bukan JSON)");
+      }
+
+      // simpan ke cache
+      res = new Response(textCheck, res);
       await cache.put(cacheKey, res.clone());
     }
 
@@ -114,6 +127,7 @@ export async function onRequest(context) {
 
       paginated.forEach(item => {
         const s = makeSlug(item);
+
         const title = item.title || "Artikel";
         const desc = (item.meta_description || "").substring(0, 100);
 
@@ -161,17 +175,15 @@ export async function onRequest(context) {
     }
 
     // ======================
-    // ARTIKEL (ANTI ERROR)
+    // ARTIKEL
     // ======================
     const artikel = data.find(item => {
       const target = make(slug);
-
       const candidates = [
         make(item.slug),
         make(item.id),
         make(item.title),
       ];
-
       return candidates.includes(target);
     });
 
